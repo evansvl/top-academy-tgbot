@@ -283,18 +283,48 @@ int main() {
                 }
             });
             
-            svr.Get("/api/tma/schedule", [](const httplib::Request& req, httplib::Response& res) {
-                if (!req.has_header("Authorization")) {
+            svr.Get("/api/tma/schedule", [&db, bot_token](const httplib::Request& req, httplib::Response& res) {
+                if (!req.has_header("x-telegram-initdata")) {
                     res.status = 401;
+                    res.set_content("{\"error\":\"No init data\"}", "application/json");
                     return;
                 }
-                std::string token = req.get_header_value("Authorization");
+                std::string init_data = req.get_header_value("x-telegram-initdata");
                 
                 try {
-                    journal::JournalClient client;
+                    auth::TgAuth tg_auth(bot_token);
+                    if (!tg_auth.validate_init_data(init_data)) {
+                        res.status = 401;
+                        res.set_content("{\"error\":\"Invalid TMA data\"}", "application/json");
+                        return;
+                    }
+                    long long chat_id = tg_auth.extract_user_id(init_data);
+                    auto user_opt = db.get_user(chat_id);
+                    if (!user_opt) {
+                        res.status = 401;
+                        res.set_content("{\"error\":\"User not found\"}", "application/json");
+                        return;
+                    }
+                    auto user = *user_opt;
+                    
+                    journal::JournalClient client(user.login, user.password);
                     std::string today = get_date_string(0);
-                    auto schedule_res = client.get_schedule(token, today);
-                    res.set_content(schedule_res.raw_response.dump(), "application/json");
+                    if (client.auth_check()) {
+                        auto schedule = client.get_schedule(today);
+                        nlohmann::json j = nlohmann::json::array();
+                        for (const auto& lesson : schedule) {
+                            j.push_back({
+                                {"started_at", lesson.started_at},
+                                {"finished_at", lesson.finished_at},
+                                {"subject_name", lesson.subject_name},
+                                {"room_name", lesson.room_name}
+                            });
+                        }
+                        res.set_content(j.dump(), "application/json");
+                    } else {
+                        res.status = 401;
+                        res.set_content("{\"error\":\"Auth failed\"}", "application/json");
+                    }
                 } catch (const std::exception& e) {
                     res.status = 500;
                     res.set_content("{\"error\":\"API Error\"}", "application/json");
