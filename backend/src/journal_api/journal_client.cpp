@@ -18,7 +18,15 @@ bool JournalClient::refresh_token() {
         {"username", login_}
     };
 
-    cpr::Response r = cpr::Post(cpr::Url{kBaseUrl + "/auth/login"}, cpr::Body{payload.dump()}, cpr::Header{{"Content-Type", "application/json"}}, cpr::VerifySsl(false));
+    cpr::Header headers = {
+        {"accept", "application/json, text/plain, */*"},
+        {"accept-language", "ru_RU, ru"},
+        {"content-type", "application/json"},
+        {"origin", "https://journal.top-academy.ru"},
+        {"referer", "https://journal.top-academy.ru/ru/auth/login"},
+        {"user-agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"}
+    };
+    cpr::Response r = cpr::Post(cpr::Url{kBaseUrl + "/auth/login"}, cpr::Body{payload.dump()}, headers, cpr::VerifySsl(false));
 
     if (r.status_code == 200) {
         try {
@@ -57,7 +65,15 @@ nlohmann::json JournalClient::make_request(const std::string& endpoint, const nl
         }
     }
 
-    cpr::Response r = cpr::Get(cpr::Url{kBaseUrl + endpoint}, cpr_params, cpr::Header{{"Authorization", "Bearer " + access_token_}}, cpr::VerifySsl(false));
+    cpr::Header headers = {
+        {"accept", "application/json, text/plain, */*"},
+        {"accept-language", "ru_RU, ru"},
+        {"authorization", "Bearer " + access_token_},
+        {"origin", "https://journal.top-academy.ru"},
+        {"referer", "https://journal.top-academy.ru/"},
+        {"user-agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"}
+    };
+    cpr::Response r = cpr::Get(cpr::Url{kBaseUrl + endpoint}, cpr_params, headers, cpr::VerifySsl(false));
 
     if (r.status_code == 200) {
         try {
