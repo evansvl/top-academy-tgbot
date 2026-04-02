@@ -40,12 +40,13 @@ bool JournalClient::refresh_token() {
             auto json = nlohmann::json::parse(r.text);
             if (json.contains("access_token")) {
                 access_token_ = json["access_token"];
-                
+
                 auto user_info = make_request("/user/info", {});
                 if(user_info != nullptr && user_info.contains("student_id")) {
                     student_id_ = user_info["student_id"];
-                    return true;
                 }
+                
+                return true;
             }
         } catch (const nlohmann::json::parse_error& e) {
             std::cerr << "JSON parse error in refresh_token: " << e.what() << std::endl;

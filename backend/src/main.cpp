@@ -150,18 +150,9 @@ int main() {
                 else if (session.state == AWAITING_PASSWORD) {
                     std::string password = message->text;
                     std::string login = session.login;
-                    std::vector<int> del_msgs = session.messages_to_delete;
+                    bot.getApi().sendMessage(chat_id, "Проверяем данные...");
 
-                    for (int msg_id : del_msgs) {
-                        try {
-                            bot.getApi().deleteMessage(chat_id, msg_id);
-                        } catch (...) {}
-                    }
-
-                    bot.getApi().sendMessage(chat_id, "????????? ??????...");
-
-                    std::thread([chat_id, login, password, &bot, &db, TMA_URL]() {
-                        journal::JournalClient client(login, password);
+                    journal::JournalClient client(login, password);
                         if (client.auth_check()) {
                             db::UserRecord new_user;
                             new_user.telegram_id = chat_id;
@@ -176,7 +167,7 @@ int main() {
                         } else {
                             bot.getApi().sendMessage(chat_id, "Неверный логин или пароль. Попробуйте снова.");
                         }
-                    }).detach();
+                    
                     
                     auth_sessions.erase(chat_id);
                     return;
