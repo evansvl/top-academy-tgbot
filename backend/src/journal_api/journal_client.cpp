@@ -41,7 +41,7 @@ bool JournalClient::refresh_token() {
             if (json.contains("access_token")) {
                 access_token_ = json["access_token"];
 
-                auto user_info = make_request("/user/info", {});
+                auto user_info = make_request("/settings/user-info", {});
                 if(user_info != nullptr && user_info.contains("student_id")) {
                     student_id_ = user_info["student_id"];
                 }
@@ -59,7 +59,7 @@ bool JournalClient::auth_check() {
     if (access_token_.empty()) {
         return refresh_token();
     }
-    auto response = make_request("/user/info", {});
+    auto response = make_request("/settings/user-info", {});
     return response != nullptr;
 }
 
@@ -128,7 +128,7 @@ std::vector<Grade> JournalClient::get_grades(const std::string& date) {
         if (!auth_check()) return grades;
     }
 
-    auto response = make_request("/progress/operations/student-visits-by-date", {{"student_id", student_id_}, {"date", date}});
+    auto response = make_request("/progress/operations/student-visits", {{"student_id", student_id_}, {"date", date}});
 
     if (response != nullptr && response.is_array()) {
         for (const auto& item : response) {

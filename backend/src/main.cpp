@@ -172,17 +172,17 @@ int main() {
                     auth_sessions.erase(chat_id);
                     return;
                 }
+            } // CLOSE auth_sessions.count check
 
-                auto user_opt = db.get_user(chat_id);
-                if (user_opt) {
-                    auto user = *user_opt;
+            auto user_opt = db.get_user(chat_id);
+            if (user_opt) {
+                auto user = *user_opt;
                     if (message->text == "Оценки") {
                         bot.getApi().sendMessage(chat_id, "Выберите дату:", nullptr, 0, utils::create_date_keyboard("grades_"));
                     } else if (message->text == "Расписание") {
                         bot.getApi().sendMessage(chat_id, "Выберите дату:", nullptr, 0, utils::create_date_keyboard("schedule_"));
                     }
                 }
-            }
         });
 
         bot.getEvents().onCallbackQuery([&bot, &db](TgBot::CallbackQuery::Ptr query) {
