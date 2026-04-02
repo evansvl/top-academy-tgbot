@@ -150,18 +150,15 @@ int main() {
                 else if (session.state == AWAITING_PASSWORD) {
                     std::string password = message->text;
                     std::string login = session.login;
-                    int pw_msg_id = session.password_message_id;
-                    
-                    try {
-                        bot.getApi().deleteMessage(chat_id, message->messageId);    
-                        if (pw_msg_id != 0) {
-                            bot.getApi().deleteMessage(chat_id, pw_msg_id);
-                        }
-                    } catch (const std::exception&) {
-                        // Игнорируем ошибку, если сообщение уже удалено
+                    std::vector<int> del_msgs = session.messages_to_delete;
+
+                    for (int msg_id : del_msgs) {
+                        try {
+                            bot.getApi().deleteMessage(chat_id, msg_id);
+                        } catch (...) {}
                     }
 
-                    bot.getApi().sendMessage(chat_id, "Проверяем данные...");
+                    bot.getApi().sendMessage(chat_id, "????????? ??????...");
 
                     std::thread([chat_id, login, password, &bot, &db, TMA_URL]() {
                         journal::JournalClient client(login, password);
