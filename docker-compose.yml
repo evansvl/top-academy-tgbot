@@ -8,8 +8,8 @@ services:
     ports:
       - '8080:8080'
     volumes:
-      - ./backend/.env:/app/.env
-      - ./backend/data:/app/data
+      - .env:/app/.env
+      - db_data:/app/data
     environment:
       - DB_PATH=/app/data/journal_bot.db
 
@@ -23,3 +23,6 @@ services:
       - '3000:3000'
     depends_on:
       - backend
+
+volumes:
+  db_data:
