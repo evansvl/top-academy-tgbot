@@ -144,18 +144,23 @@ int main() {
                 if (session.state == AWAITING_LOGIN) {
                     session.login = text;
                     session.state = AWAITING_PASSWORD;
-                    auto msg = bot.getApi().sendMessage(chat_id, "Отлично! Теперь введите ваш *пароль*:", nullptr, nullptr, nullptr, "Markdown");
-                    session.messages_to_delete.push_back(msg->messageId);
+                    auto msg = bot.getApi().sendMessage(chat_id, "Отлично! Теперь введите ваш *пароль*:", nullptr, nullptr, nullptr, "Markdown");                    session.password_message_id = msg->messageId;                    session.messages_to_delete.push_back(msg->messageId);
                     return;
                 } 
                 else if (session.state == AWAITING_PASSWORD) {
                     std::string password = message->text;
                     std::string login = session.login;
                     int pw_msg_id = session.password_message_id;
-                    bot.getApi().deleteMessage(chat_id, message->messageId);
-                    if (pw_msg_id != 0) {
-                        bot.getApi().deleteMessage(chat_id, pw_msg_id);
+                    
+                    try {
+                        bot.getApi().deleteMessage(chat_id, message->messageId);    
+                        if (pw_msg_id != 0) {
+                            bot.getApi().deleteMessage(chat_id, pw_msg_id);
+                        }
+                    } catch (const std::exception&) {
+                        // Игнорируем ошибку, если сообщение уже удалено
                     }
+
                     bot.getApi().sendMessage(chat_id, "Проверяем данные...");
 
                     std::thread([chat_id, login, password, &bot, &db, TMA_URL]() {
@@ -206,8 +211,10 @@ int main() {
             }
             auto user = *user_opt;
 
-            bot.getApi().answerCallbackQuery(query->id, "Загрузка...");
-            bot.getApi().deleteMessage(chat_id, query->message->messageId);
+bot.getApi().answerCallbackQuery(query->id, "Загрузка...");
+            try {
+                bot.getApi().deleteMessage(chat_id, query->message->messageId);
+            } catch (const std::exception&) {}
 
             if (prefix == "grades_") {
                 std::thread([chat_id, user, date, &bot, &db]() {
