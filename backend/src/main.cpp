@@ -47,18 +47,28 @@ TgBot::ReplyKeyboardMarkup::Ptr get_main_keyboard(const std::string& tma_url) {
     TgBot::WebAppInfo::Ptr web_app(new TgBot::WebAppInfo);
     web_app->url = tma_url;
     btn_tma->webApp = web_app;
+    btn_tma->requestContact = false;
+    btn_tma->requestLocation = false;
 
     TgBot::KeyboardButton::Ptr btn_today(new TgBot::KeyboardButton);
     btn_today->text = "На сегодня";
+    btn_today->requestContact = false;
+    btn_today->requestLocation = false;
     
     TgBot::KeyboardButton::Ptr btn_tomorrow(new TgBot::KeyboardButton);
     btn_tomorrow->text = "На завтра";
+    btn_tomorrow->requestContact = false;
+    btn_tomorrow->requestLocation = false;
 
     TgBot::KeyboardButton::Ptr btn_grades(new TgBot::KeyboardButton);
     btn_grades->text = "Оценки";
+    btn_grades->requestContact = false;
+    btn_grades->requestLocation = false;
 
     TgBot::KeyboardButton::Ptr btn_hw(new TgBot::KeyboardButton);
     btn_hw->text = "Домашние задания";
+    btn_hw->requestContact = false;
+    btn_hw->requestLocation = false;
 
     // Layout: 1-2-2
     std::vector<TgBot::KeyboardButton::Ptr> row1 = { btn_tma };
