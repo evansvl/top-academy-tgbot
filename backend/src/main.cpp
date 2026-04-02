@@ -12,6 +12,7 @@
 #include "db/database.hpp"
 #include "journal_api/journal_client.hpp"
 #include "tma_auth/tma_auth.hpp"
+#include "utils/date_utils.hpp"
 
 std::unordered_map<std::string, std::string> load_env(const std::string& filepath) {
     std::unordered_map<std::string, std::string> env;
@@ -38,46 +39,33 @@ std::string get_env_var(const std::string& key) {
     return it != env.end() ? it->second : "";
 }
 
-TgBot::ReplyKeyboardMarkup::Ptr get_main_keyboard(const std::string& tma_url) {
+TgBot::ReplyKeyboardMarkup::Ptr get_main_keyboard() {
     TgBot::ReplyKeyboardMarkup::Ptr keyboard(new TgBot::ReplyKeyboardMarkup);
+    keyboard->oneTimeKeyboard = false;
     keyboard->resizeKeyboard = true;
 
-    TgBot::KeyboardButton::Ptr btn_tma(new TgBot::KeyboardButton);
-    btn_tma->text = "Открыть Mini App";
-    TgBot::WebAppInfo::Ptr web_app(new TgBot::WebAppInfo);
-    web_app->url = tma_url;
-    btn_tma->webApp = web_app;
-    btn_tma->requestContact = false;
-    btn_tma->requestLocation = false;
+    std::vector<TgBot::KeyboardButton::Ptr> row1;
+    TgBot::KeyboardButton::Ptr grades_button(new TgBot::KeyboardButton);
+    grades_button->text = "Оценки";
+    grades_button->requestContact = false;
+    grades_button->requestLocation = false;
+    row1.push_back(grades_button);
 
-    TgBot::KeyboardButton::Ptr btn_today(new TgBot::KeyboardButton);
-    btn_today->text = "На сегодня";
-    btn_today->requestContact = false;
-    btn_today->requestLocation = false;
-    
-    TgBot::KeyboardButton::Ptr btn_tomorrow(new TgBot::KeyboardButton);
-    btn_tomorrow->text = "На завтра";
-    btn_tomorrow->requestContact = false;
-    btn_tomorrow->requestLocation = false;
-
-    TgBot::KeyboardButton::Ptr btn_grades(new TgBot::KeyboardButton);
-    btn_grades->text = "Оценки";
-    btn_grades->requestContact = false;
-    btn_grades->requestLocation = false;
-
-    TgBot::KeyboardButton::Ptr btn_hw(new TgBot::KeyboardButton);
-    btn_hw->text = "Домашние задания";
-    btn_hw->requestContact = false;
-    btn_hw->requestLocation = false;
-
-    // Layout: 1-2-2
-    std::vector<TgBot::KeyboardButton::Ptr> row1 = { btn_tma };
-    std::vector<TgBot::KeyboardButton::Ptr> row2 = { btn_today, btn_tomorrow };
-    std::vector<TgBot::KeyboardButton::Ptr> row3 = { btn_grades, btn_hw };
+    TgBot::KeyboardButton::Ptr schedule_button(new TgBot::KeyboardButton);
+    schedule_button->text = "Расписание";
+    schedule_button->requestContact = false;
+    schedule_button->requestLocation = false;
+    row1.push_back(schedule_button);
 
     keyboard->keyboard.push_back(row1);
+
+    std::vector<TgBot::KeyboardButton::Ptr> row2;
+    TgBot::KeyboardButton::Ptr mini_app_button(new TgBot::KeyboardButton);
+    mini_app_button->text = "Перейти в приложение";
+    mini_app_button->webApp = TgBot::WebAppInfo::Ptr(new TgBot::WebAppInfo);
+    mini_app_button->webApp->url = TMA_URL;
+    row2.push_back(mini_app_button);
     keyboard->keyboard.push_back(row2);
-    keyboard->keyboard.push_back(row3);
 
     return keyboard;
 }
@@ -128,7 +116,7 @@ int main() {
             long long chat_id = message->chat->id;
             auto user = db.get_user(chat_id);
             if (user) {
-                bot.getApi().sendMessage(chat_id, "Вы уже авторизованы!", nullptr, nullptr, get_main_keyboard(TMA_URL), "Markdown");
+                bot.getApi().sendMessage(chat_id, "Вы уже авторизованы!", nullptr, nullptr, get_main_keyboard(), "Markdown");
                 return;
             }
 
@@ -192,31 +180,14 @@ int main() {
                 if (user_opt) {
                     auto user = *user_opt;
                     if (message->text == "Оценки") {
-                        bot.getApi().sendMessage(chat_id, "Раздел 'Оценки' в разработке.");
-                    } else if (message->text == "Домашнее задание") {
-                        std::thread([&, chat_id, user]() {
-                            journal::JournalClient client(user.login, user.password);
-                            if (client.auth_check()) {
-                                auto homeworks = client.get_homeworks();
-                                if (homeworks.empty()) {
-                                    bot.getApi().sendMessage(chat_id, "Домашних заданий нет.");
-                                } else {
-                                    std::stringstream ss;
-                                    for (const auto& hw : homeworks) {
-                                        ss << "📝 " << hw.lesson << "\n"
-                                           << "   " << hw.task << "\n\n";
-                                    }
-                                    bot.getApi().sendMessage(chat_id, ss.str());
-                                }
-                            } else {
-                                bot.getApi().sendMessage(chat_id, "Не удалось обновить данные. Попробуйте /start и войдите снова.");
-                            }
-                        }).detach();
+                        bot.getApi().sendMessage(chat_id, "Выберите дату:", nullptr, 0, utils::create_date_keyboard("grades_"));
+                    } else if (message->text == "Расписание") {
+                        bot.getApi().sendMessage(chat_id, "Выберите дату:", nullptr, 0, utils::create_date_keyboard("schedule_"));
                     }
                 }
             }
         } catch (TgBot::TgException& e) {
-            std::cerr << "TgBot error: " << e.what() << std::endl;
+            printf("error: %s\n", e.what());
         }
 
         std::thread tma_server([&db, bot_token]() {
@@ -281,3 +252,72 @@ int main() {
 
     return 0;
 }
+
+bot.onCallbackQuery([&](TgBot::CallbackQuery::Ptr query) {
+    long long chat_id = query->message->chat->id;
+    std::string data = query->data;
+
+    std::string prefix = data.substr(0, data.find("_") + 1);
+    std::string date = data.substr(data.find("_") + 1);
+
+    auto user_opt = db.get_user(chat_id);
+    if (!user_opt) {
+        bot.getApi().sendMessage(chat_id, "Не удалось найти ваши данные. Пожалуйста, попробуйте /start снова.");
+        return;
+    }
+    auto user = *user_opt;
+
+    bot.getApi().answerCallbackQuery(query->id, "Загрузка...");
+    bot.getApi().deleteMessage(chat_id, query->message->messageId);
+
+    if (prefix == "grades_") {
+        std::thread([&, chat_id, user, date]() {
+            journal::JournalClient client(user.login, user.password);
+            if (client.auth_check()) {
+                auto grades = client.get_grades(date);
+                if (grades.empty()) {
+                    bot.getApi().sendMessage(chat_id, "Оценок за " + date + " нет.");
+                } else {
+                    std::stringstream ss;
+                    ss << "Оценки за " << date << ":\n\n";
+                    for (const auto& grade : grades) {
+                        ss << "🔹 " << grade.lesson << ": " << grade.value << " (" << grade.type << ")\n";
+                    }
+                    
+                    std::string text = ss.str();
+                    if (text.length() > 4096) {
+                        text = text.substr(0, 4090) + "\n...";
+                    }
+                    bot.getApi().sendMessage(chat_id, text);
+                }
+            } else {
+                bot.getApi().sendMessage(chat_id, "Ошибка авторизации. Попробуйте /start снова.");
+            }
+        }).detach();
+    } else if (prefix == "schedule_") {
+         std::thread([&, chat_id, user, date]() {
+            journal::JournalClient client(user.login, user.password);
+            if (client.auth_check()) {
+                auto schedule = client.get_schedule(date);
+                if (schedule.empty()) {
+                    bot.getApi().sendMessage(chat_id, "Занятий на " + date + " нет.");
+                } else {
+                    std::stringstream ss;
+                    ss << "Расписание на " << date << ":\n\n";
+                    for (const auto& item : schedule) {
+                        ss << "🕒 " << item.started_at << " - " << item.finished_at << "\n"
+                           << "   " << item.subject_name << "\n"
+                           << "   📍 " << item.room_name << "\n\n";
+                    }
+                    std::string text = ss.str();
+                    if (text.length() > 4096) {
+                        text = text.substr(0, 4090) + "\n...";
+                    }
+                    bot.getApi().sendMessage(chat_id, text);
+                }
+            } else {
+                bot.getApi().sendMessage(chat_id, "Ошибка авторизации. Попробуйте /start снова.");
+            }
+        }).detach();
+    }
+});
