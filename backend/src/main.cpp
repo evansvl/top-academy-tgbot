@@ -39,7 +39,7 @@ std::string get_env_var(const std::string& key) {
     return it != env.end() ? it->second : "";
 }
 
-TgBot::ReplyKeyboardMarkup::Ptr get_main_keyboard() {
+TgBot::ReplyKeyboardMarkup::Ptr get_main_keyboard(const std::string& TMA_URL) {
     TgBot::ReplyKeyboardMarkup::Ptr keyboard(new TgBot::ReplyKeyboardMarkup);
     keyboard->oneTimeKeyboard = false;
     keyboard->resizeKeyboard = true;
@@ -80,6 +80,7 @@ struct AuthSession {
     AuthState state = NONE;
     std::string login = "";
     std::vector<int> messages_to_delete;
+    int password_message_id = 0;
 };
 
 std::string get_date_string(int offset_days = 0) {
@@ -116,7 +117,7 @@ int main() {
             long long chat_id = message->chat->id;
             auto user = db.get_user(chat_id);
             if (user) {
-                bot.getApi().sendMessage(chat_id, "Вы уже авторизованы!", nullptr, nullptr, get_main_keyboard(), "Markdown");
+                bot.getApi().sendMessage(chat_id, "Вы уже авторизованы!", nullptr, nullptr, get_main_keyboard(TMA_URL), "Markdown");
                 return;
             }
 
@@ -148,31 +149,34 @@ int main() {
                     return;
                 } 
                 else if (session.state == AWAITING_PASSWORD) {
-                    auto user_opt = db.get_user(chat_id);
-                    if (!user_opt) {
-                        bot.getApi().sendMessage(chat_id, "Произошла ошибка. Пожалуйста, попробуйте /start снова.");
-                        auth_sessions.erase(chat_id);
-                        return;
-                    }
-                    auto user = *user_opt;
-                    user.password = message->text;
+                    std::string password = message->text;
+                    std::string login = session.login;
+                    int pw_msg_id = session.password_message_id;
                     bot.getApi().deleteMessage(chat_id, message->messageId);
-                    if (auth_sessions[chat_id].password_message_id != 0) {
-                        bot.getApi().deleteMessage(chat_id, auth_sessions[chat_id].password_message_id);
+                    if (pw_msg_id != 0) {
+                        bot.getApi().deleteMessage(chat_id, pw_msg_id);
                     }
                     bot.getApi().sendMessage(chat_id, "Проверяем данные...");
 
-                    std::thread([&, chat_id, user, message]() {
-                        journal::JournalClient client(user.login, user.password);
+                    std::thread([chat_id, login, password, &bot, &db, TMA_URL]() {
+                        journal::JournalClient client(login, password);
                         if (client.auth_check()) {
-                            db.update_user(user);
-                            bot.getApi().sendMessage(chat_id, "Вы успешно вошли!", nullptr, 0, get_main_keyboard());
+                            db::UserRecord new_user;
+                            new_user.telegram_id = chat_id;
+                            new_user.login = login;
+                            new_user.password = password;
+                            new_user.access_token = "";
+                            new_user.refresh_token = "";
+                            new_user.student_id = 0;
+                            new_user.group_id = 0;
+                            db.save_user(new_user);
+                            bot.getApi().sendMessage(chat_id, "Вы успешно вошли!", nullptr, 0, get_main_keyboard(TMA_URL));
                         } else {
                             bot.getApi().sendMessage(chat_id, "Неверный логин или пароль. Попробуйте снова.");
-                            db.delete_user(chat_id);
                         }
-                        auth_sessions.erase(chat_id);
                     }).detach();
+                    
+                    auth_sessions.erase(chat_id);
                     return;
                 }
 
@@ -186,9 +190,76 @@ int main() {
                     }
                 }
             }
-        } catch (TgBot::TgException& e) {
-            printf("error: %s\n", e.what());
-        }
+        });
+
+        bot.getEvents().onCallbackQuery([&bot, &db](TgBot::CallbackQuery::Ptr query) {
+            long long chat_id = query->message->chat->id;
+            std::string data = query->data;
+
+            std::string prefix = data.substr(0, data.find("_") + 1);
+            std::string date = data.substr(data.find("_") + 1);
+
+            auto user_opt = db.get_user(chat_id);
+            if (!user_opt) {
+                bot.getApi().sendMessage(chat_id, "Не удалось найти ваши данные. Пожалуйста, попробуйте /start снова.");
+                return;
+            }
+            auto user = *user_opt;
+
+            bot.getApi().answerCallbackQuery(query->id, "Загрузка...");
+            bot.getApi().deleteMessage(chat_id, query->message->messageId);
+
+            if (prefix == "grades_") {
+                std::thread([chat_id, user, date, &bot, &db]() {
+                    journal::JournalClient client(user.login, user.password);
+                    if (client.auth_check()) {
+                        auto grades = client.get_grades(date);
+                        if (grades.empty()) {
+                            bot.getApi().sendMessage(chat_id, "Оценок за " + date + " нет.");
+                        } else {
+                            std::stringstream ss;
+                            ss << "Оценки за " << date << ":\n\n";
+                            for (const auto& grade : grades) {
+                                ss << "🔹 " << grade.lesson << ": " << grade.value << " (" << grade.type << ")\n";
+                            }
+                            
+                            std::string text = ss.str();
+                            if (text.length() > 4096) {
+                                text = text.substr(0, 4090) + "\n...";
+                            }
+                            bot.getApi().sendMessage(chat_id, text);
+                        }
+                    } else {
+                        bot.getApi().sendMessage(chat_id, "Ошибка авторизации. Попробуйте /start снова.");
+                    }
+                }).detach();
+            } else if (prefix == "schedule_") {
+                 std::thread([chat_id, user, date, &bot, &db]() {
+                    journal::JournalClient client(user.login, user.password);
+                    if (client.auth_check()) {
+                        auto schedule = client.get_schedule(date);
+                        if (schedule.empty()) {
+                            bot.getApi().sendMessage(chat_id, "Занятий на " + date + " нет.");
+                        } else {
+                            std::stringstream ss;
+                            ss << "Расписание на " << date << ":\n\n";
+                            for (const auto& item : schedule) {
+                                ss << "🕒 " << item.started_at << " - " << item.finished_at << "\n"
+                                   << "   " << item.subject_name << "\n"
+                                   << "   📍 " << item.room_name << "\n\n";
+                            }
+                            std::string text = ss.str();
+                            if (text.length() > 4096) {
+                                text = text.substr(0, 4090) + "\n...";
+                            }
+                            bot.getApi().sendMessage(chat_id, text);
+                        }
+                    } else {
+                        bot.getApi().sendMessage(chat_id, "Ошибка авторизации. Попробуйте /start снова.");
+                    }
+                }).detach();
+            }
+        });
 
         std::thread tma_server([&db, bot_token]() {
             httplib::Server svr;
@@ -252,72 +323,3 @@ int main() {
 
     return 0;
 }
-
-bot.onCallbackQuery([&](TgBot::CallbackQuery::Ptr query) {
-    long long chat_id = query->message->chat->id;
-    std::string data = query->data;
-
-    std::string prefix = data.substr(0, data.find("_") + 1);
-    std::string date = data.substr(data.find("_") + 1);
-
-    auto user_opt = db.get_user(chat_id);
-    if (!user_opt) {
-        bot.getApi().sendMessage(chat_id, "Не удалось найти ваши данные. Пожалуйста, попробуйте /start снова.");
-        return;
-    }
-    auto user = *user_opt;
-
-    bot.getApi().answerCallbackQuery(query->id, "Загрузка...");
-    bot.getApi().deleteMessage(chat_id, query->message->messageId);
-
-    if (prefix == "grades_") {
-        std::thread([&, chat_id, user, date]() {
-            journal::JournalClient client(user.login, user.password);
-            if (client.auth_check()) {
-                auto grades = client.get_grades(date);
-                if (grades.empty()) {
-                    bot.getApi().sendMessage(chat_id, "Оценок за " + date + " нет.");
-                } else {
-                    std::stringstream ss;
-                    ss << "Оценки за " << date << ":\n\n";
-                    for (const auto& grade : grades) {
-                        ss << "🔹 " << grade.lesson << ": " << grade.value << " (" << grade.type << ")\n";
-                    }
-                    
-                    std::string text = ss.str();
-                    if (text.length() > 4096) {
-                        text = text.substr(0, 4090) + "\n...";
-                    }
-                    bot.getApi().sendMessage(chat_id, text);
-                }
-            } else {
-                bot.getApi().sendMessage(chat_id, "Ошибка авторизации. Попробуйте /start снова.");
-            }
-        }).detach();
-    } else if (prefix == "schedule_") {
-         std::thread([&, chat_id, user, date]() {
-            journal::JournalClient client(user.login, user.password);
-            if (client.auth_check()) {
-                auto schedule = client.get_schedule(date);
-                if (schedule.empty()) {
-                    bot.getApi().sendMessage(chat_id, "Занятий на " + date + " нет.");
-                } else {
-                    std::stringstream ss;
-                    ss << "Расписание на " << date << ":\n\n";
-                    for (const auto& item : schedule) {
-                        ss << "🕒 " << item.started_at << " - " << item.finished_at << "\n"
-                           << "   " << item.subject_name << "\n"
-                           << "   📍 " << item.room_name << "\n\n";
-                    }
-                    std::string text = ss.str();
-                    if (text.length() > 4096) {
-                        text = text.substr(0, 4090) + "\n...";
-                    }
-                    bot.getApi().sendMessage(chat_id, text);
-                }
-            } else {
-                bot.getApi().sendMessage(chat_id, "Ошибка авторизации. Попробуйте /start снова.");
-            }
-        }).detach();
-    }
-});

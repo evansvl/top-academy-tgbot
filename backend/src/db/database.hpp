@@ -9,6 +9,8 @@ namespace db {
 
 struct UserRecord {
     long long telegram_id;
+    std::string login;
+    std::string password;
     std::string access_token;
     std::string refresh_token;
     int student_id;

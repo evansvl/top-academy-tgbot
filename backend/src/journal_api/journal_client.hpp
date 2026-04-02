@@ -13,6 +13,13 @@ struct Grade {
     std::string type;
 };
 
+struct Lesson {
+    std::string started_at;
+    std::string finished_at;
+    std::string subject_name;
+    std::string room_name;
+};
+
 class JournalClient {
 public:
     JournalClient(const std::string& login, const std::string& password);
