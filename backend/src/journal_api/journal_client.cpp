@@ -4,8 +4,8 @@
 
 namespace journal {
 
-const std::string kBaseUrl = "https://journal.top-academy.ru/api";
-const std::string kAppKey = "13a7d38f-4435-4051-a323-c639c2f90123";
+const std::string kBaseUrl = "https://msapi.top-academy.ru/api/v2";
+const std::string kAppKey = "6a56a5df2667e65aab73ce76d1dd737f7d1faef9c52e8b8c55ac75f565d8e8a6";
 
 JournalClient::JournalClient(const std::string& login, const std::string& password)
     : login_(login), password_(password) {}
@@ -23,8 +23,15 @@ bool JournalClient::refresh_token() {
         {"accept-language", "ru_RU, ru"},
         {"content-type", "application/json"},
         {"origin", "https://journal.top-academy.ru"},
-        {"referer", "https://journal.top-academy.ru/ru/auth/login"},
-        {"user-agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"}
+        {"priority", "u=1, i"},
+        {"referer", "https://journal.top-academy.ru/"},
+        {"sec-ch-ua", "\"Chromium\";v=\"146\", \"Not-A.Brand\";v=\"24\", \"Microsoft Edge\";v=\"146\""},
+        {"sec-ch-ua-mobile", "?0"},
+        {"sec-ch-ua-platform", "\"Windows\""},
+        {"sec-fetch-dest", "empty"},
+        {"sec-fetch-mode", "cors"},
+        {"sec-fetch-site", "same-site"},
+        {"user-agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0.0.0 Safari/537.36 Edg/146.0.0.0"}
     };
     cpr::Response r = cpr::Post(cpr::Url{kBaseUrl + "/auth/login"}, cpr::Body{payload.dump()}, headers, cpr::VerifySsl(false));
 
@@ -70,8 +77,15 @@ nlohmann::json JournalClient::make_request(const std::string& endpoint, const nl
         {"accept-language", "ru_RU, ru"},
         {"authorization", "Bearer " + access_token_},
         {"origin", "https://journal.top-academy.ru"},
+        {"priority", "u=1, i"},
         {"referer", "https://journal.top-academy.ru/"},
-        {"user-agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"}
+        {"sec-ch-ua", "\"Chromium\";v=\"146\", \"Not-A.Brand\";v=\"24\", \"Microsoft Edge\";v=\"146\""},
+        {"sec-ch-ua-mobile", "?0"},
+        {"sec-ch-ua-platform", "\"Windows\""},
+        {"sec-fetch-dest", "empty"},
+        {"sec-fetch-mode", "cors"},
+        {"sec-fetch-site", "same-site"},
+        {"user-agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0.0.0 Safari/537.36 Edg/146.0.0.0"}
     };
     cpr::Response r = cpr::Get(cpr::Url{kBaseUrl + endpoint}, cpr_params, headers, cpr::VerifySsl(false));
 
