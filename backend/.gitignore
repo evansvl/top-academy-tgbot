@@ -1,0 +1,7 @@
+build/
+.env
+CMakeUserPresets.json
+CMakeCache.txt
+CMakeFiles/
+Testing/
+*.db
