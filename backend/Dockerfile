@@ -13,6 +13,7 @@ RUN apt-get update && apt-get install -y \
     zlib1g-dev \
     libboost-system-dev \
     libboost-thread-dev \
+    libhiredis-dev \
     tar \
     unzip \
     && rm -rf /var/lib/apt/lists/*
@@ -36,6 +37,7 @@ RUN apt-get update && apt-get install -y \
     libcurl4 \
     libssl3 \
     ca-certificates \
+    libhiredis0.14 \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app

@@ -13,6 +13,8 @@
 #include "journal_api/journal_client.hpp"
 #include "tma_auth/tma_auth.hpp"
 #include "utils/date_utils.hpp"
+#include <sw/redis++/redis++.h>
+#include <memory>
 
 std::unordered_map<std::string, std::string> load_env(const std::string& filepath) {
     std::unordered_map<std::string, std::string> env;
@@ -165,7 +167,7 @@ int main() {
                     std::string login = session.login;
                     bot.getApi().sendMessage(chat_id, "Проверяем данные...");
 
-                    journal::JournalClient client(login, password);
+                    journal::JournalClient client(login, password, redis);
                         if (client.auth_check()) {
                             db::UserRecord new_user;
                             new_user.telegram_id = chat_id;
