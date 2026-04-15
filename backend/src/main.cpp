@@ -26,6 +26,19 @@ std::unordered_map<std::string, std::string> load_env(const std::string& filepat
         if (pos != std::string::npos) {
             std::string key = line.substr(0, pos);
             std::string value = line.substr(pos + 1);
+            
+            // Trim whitespace and \r from key
+            auto key_start = key.find_first_not_of(" \t\r\n");
+            auto key_end = key.find_last_not_of(" \t\r\n");
+            if (key_start == std::string::npos) key = "";
+            else key = key.substr(key_start, key_end - key_start + 1);
+
+            // Trim whitespace and \r from value
+            auto val_start = value.find_first_not_of(" \t\r\n");
+            auto val_end = value.find_last_not_of(" \t\r\n");
+            if (val_start == std::string::npos) value = "";
+            else value = value.substr(val_start, val_end - val_start + 1);
+
             env[key] = value;
         }
     }
@@ -177,11 +190,21 @@ int main() {
             auto user_opt = db.get_user(chat_id);
             if (user_opt) {
                 auto user = *user_opt;
-                    if (message->text == "Оценки") {
-                        bot.getApi().sendMessage(chat_id, "Выберите дату:", nullptr, 0, utils::create_date_keyboard("grades_"));
-                    } else if (message->text == "Расписание") {
-                        bot.getApi().sendMessage(chat_id, "Выберите дату:", nullptr, 0, utils::create_date_keyboard("schedule_"));
-                    }
+                if (message->text == "Оценки") {
+                    auto now = std::chrono::system_clock::now();
+                    auto in_time_t = std::chrono::system_clock::to_time_t(now);
+                    std::tm tm = *std::localtime(&in_time_t);
+                    int year = tm.tm_year + 1900;
+                    int month = tm.tm_mon + 1;
+                    bot.getApi().sendMessage(chat_id, "Выберите дату:", nullptr, 0, utils::create_calendar_keyboard("grades_", year, month));
+                } else if (message->text == "Расписание") {
+                    auto now = std::chrono::system_clock::now();
+                    auto in_time_t = std::chrono::system_clock::to_time_t(now);
+                    std::tm tm = *std::localtime(&in_time_t);
+                    int year = tm.tm_year + 1900;
+                    int month = tm.tm_mon + 1;
+                    bot.getApi().sendMessage(chat_id, "Выберите дату:", nullptr, 0, utils::create_calendar_keyboard("schedule_", year, month));
+                }
                 }
         });
 
@@ -189,8 +212,31 @@ int main() {
             long long chat_id = query->message->chat->id;
             std::string data = query->data;
 
+            if (data == "IGNORE") {
+                try { bot.getApi().answerCallbackQuery(query->id, ""); } catch(...) {}
+                return;
+            }
+
             std::string prefix = data.substr(0, data.find("_") + 1);
-            std::string date = data.substr(data.find("_") + 1);
+            std::string payload = data.substr(data.find("_") + 1);
+
+            if (payload.substr(0, 4) == "NAV_" || payload.substr(0, 4) == "CAL_") {
+                std::string nav_data = payload.substr(4); // YYYY-MM
+                try {
+                    int year = std::stoi(nav_data.substr(0, 4));
+                    int month = std::stoi(nav_data.substr(5, 2));
+                    
+                    std::string header_text = (prefix == "grades_") ? "Выберите дату (Оценки):" : "Выберите дату (Расписание):";
+                    bot.getApi().editMessageText(header_text, chat_id, query->message->messageId, "", "", nullptr, utils::create_calendar_keyboard(prefix, year, month));
+                } catch(...) {}
+                try { bot.getApi().answerCallbackQuery(query->id, ""); } catch(...) {}
+                return;
+            }
+
+            std::string date = payload;
+            if (payload.substr(0, 4) == "DAY_") {
+                date = payload.substr(4); // YYYY-MM-DD
+            }
 
             auto user_opt = db.get_user(chat_id);
             if (!user_opt) {
@@ -199,59 +245,77 @@ int main() {
             }
             auto user = *user_opt;
 
-bot.getApi().answerCallbackQuery(query->id, "Загрузка...");
-            try {
-                bot.getApi().deleteMessage(chat_id, query->message->messageId);
-            } catch (const std::exception&) {}
+try { bot.getApi().answerCallbackQuery(query->id, "Загрузка..."); } catch(...) {}
 
             if (prefix == "grades_") {
-                std::thread([chat_id, user, date, &bot, &db]() {
-                    journal::JournalClient client(user.login, user.password);
-                    if (client.auth_check()) {
-                        auto grades = client.get_grades(date);
-                        if (grades.empty()) {
-                            bot.getApi().sendMessage(chat_id, "Оценок за " + date + " нет.");
+                std::thread([chat_id, user, date, query_msg_id=query->message->messageId, prefix, &bot, &db]() {
+                    try {
+                        journal::JournalClient client(user.login, user.password);
+                        client.set_cache(user.access_token, user.student_id);
+
+                        if (client.auth_check()) {
+                            // Update cache if changed
+                            if (client.get_token() != user.access_token || client.get_student_id() != user.student_id) {
+                                auto u_copy = user;
+                                u_copy.access_token = client.get_token();
+                                u_copy.student_id = client.get_student_id();
+                                db.save_user(u_copy);
+                            }
+
+                            auto grades = client.get_grades(date);
+                            std::string text;
+                            if (grades.empty()) {
+                                text = "Оценок за " + date + " нет.";
+                            } else {
+                                std::stringstream ss;
+                                ss << "Оценки за " << date << ":\n\n";      
+                                for (const auto& grade : grades) {
+                                    ss << "🔹 " << grade.lesson << ": " << grade.value << " (" << grade.type << ")\n";
+                                }
+                                text = ss.str();
+                                if (text.length() > 4096) text = text.substr(0, 4090) + "\n...";
+                            }
+                            try { bot.getApi().editMessageText(text, chat_id, query_msg_id, "", "", nullptr, utils::create_day_navigation_keyboard(prefix, date)); } catch(...) {}
                         } else {
-                            std::stringstream ss;
-                            ss << "Оценки за " << date << ":\n\n";
-                            for (const auto& grade : grades) {
-                                ss << "🔹 " << grade.lesson << ": " << grade.value << " (" << grade.type << ")\n";
-                            }
-                            
-                            std::string text = ss.str();
-                            if (text.length() > 4096) {
-                                text = text.substr(0, 4090) + "\n...";
-                            }
-                            bot.getApi().sendMessage(chat_id, text);
+                            try { bot.getApi().editMessageText("Ошибка авторизации. Попробуйте /start снова.", chat_id, query_msg_id); } catch(...) {}
                         }
-                    } else {
-                        bot.getApi().sendMessage(chat_id, "Ошибка авторизации. Попробуйте /start снова.");
-                    }
+                    } catch (const std::exception& e) { std::cerr << "Thread error: " << e.what() << std::endl; }
                 }).detach();
             } else if (prefix == "schedule_") {
-                 std::thread([chat_id, user, date, &bot, &db]() {
-                    journal::JournalClient client(user.login, user.password);
-                    if (client.auth_check()) {
-                        auto schedule = client.get_schedule(date);
-                        if (schedule.empty()) {
-                            bot.getApi().sendMessage(chat_id, "Занятий на " + date + " нет.");
+                 std::thread([chat_id, user, date, query_msg_id=query->message->messageId, prefix, &bot, &db]() {
+                    try {
+                        journal::JournalClient client(user.login, user.password);   
+                        client.set_cache(user.access_token, user.student_id);
+
+                        if (client.auth_check()) {
+                            // Update cache if changed
+                            if (client.get_token() != user.access_token || client.get_student_id() != user.student_id) {
+                                auto u_copy = user;
+                                u_copy.access_token = client.get_token();
+                                u_copy.student_id = client.get_student_id();
+                                db.save_user(u_copy);
+                            }
+
+                            auto schedule = client.get_schedule(date);
+                            std::string text;
+                            if (schedule.empty()) {
+                                text = "Занятий на " + date + " нет.";
+                            } else {
+                                std::stringstream ss;
+                                ss << "Расписание на " << date << ":\n\n";
+                                for (const auto& item : schedule) {
+                                    ss << "🕒 " << item.started_at << " - " << item.finished_at << "\n"
+                                       << "   " << item.subject_name << "\n"        
+                                       << "   📍 " << item.room_name << "\n\n";    
+                                }
+                                text = ss.str();
+                                if (text.length() > 4096) text = text.substr(0, 4090) + "\n...";
+                            }
+                            try { bot.getApi().editMessageText(text, chat_id, query_msg_id, "", "", nullptr, utils::create_day_navigation_keyboard(prefix, date)); } catch(...) {}
                         } else {
-                            std::stringstream ss;
-                            ss << "Расписание на " << date << ":\n\n";
-                            for (const auto& item : schedule) {
-                                ss << "🕒 " << item.started_at << " - " << item.finished_at << "\n"
-                                   << "   " << item.subject_name << "\n"
-                                   << "   📍 " << item.room_name << "\n\n";
-                            }
-                            std::string text = ss.str();
-                            if (text.length() > 4096) {
-                                text = text.substr(0, 4090) + "\n...";
-                            }
-                            bot.getApi().sendMessage(chat_id, text);
+                            try { bot.getApi().editMessageText("Ошибка авторизации. Попробуйте /start снова.", chat_id, query_msg_id); } catch(...) {}
                         }
-                    } else {
-                        bot.getApi().sendMessage(chat_id, "Ошибка авторизации. Попробуйте /start снова.");
-                    }
+                    } catch (const std::exception& e) { std::cerr << "Thread error: " << e.what() << std::endl; }
                 }).detach();
             }
         });

@@ -28,11 +28,17 @@ public:
     std::vector<Lesson> get_schedule(const std::string& date);
     std::vector<Grade> get_grades(const std::string& date);
 
+
+    void set_cache(const std::string& token, int student_id) { access_token_ = token; student_id_ = student_id; }
+    std::string get_token() const { return access_token_; }
+    int get_student_id() const { return student_id_; }
+
 private:
     std::string login_;
     std::string password_;
     std::string access_token_;
     int student_id_ = 0;
+
 
     bool refresh_token();
     nlohmann::json make_request(const std::string& endpoint, const nlohmann::json& params);

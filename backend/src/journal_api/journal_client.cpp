@@ -128,18 +128,28 @@ std::vector<Grade> JournalClient::get_grades(const std::string& date) {
         if (!auth_check()) return grades;
     }
 
-    auto response = make_request("/progress/operations/student-visits", {{"student_id", student_id_}, {"date", date}});
+    auto response = make_request("/progress/operations/student-visits", {{"student_id", student_id_}});
 
     if (response != nullptr && response.is_array()) {
         for (const auto& item : response) {
-            if (item.contains("control_work_mark") && !item["control_work_mark"].is_null()) {
-                grades.push_back({item.value("spec_name", ""), std::to_string(item["control_work_mark"].get<int>()), "Контрольная"});
-            }
-            if (item.contains("home_work_mark") && !item["home_work_mark"].is_null()) {
-                grades.push_back({item.value("spec_name", ""), std::to_string(item["home_work_mark"].get<int>()), "Домашняя"});
-            }
-            if (item.contains("lab_work_mark") && !item["lab_work_mark"].is_null()) {
-                grades.push_back({item.value("spec_name", ""), std::to_string(item["lab_work_mark"].get<int>()), "Лабораторная"});
+            if (item.contains("date_visit") && item["date_visit"] == date) {
+                bool found_mark = false;
+                
+                auto add_mark = [&](const char* key, const std::string& type_name) {
+                    if (item.contains(key) && !item[key].is_null()) {
+                        grades.push_back({item.value("spec_name", ""), std::to_string(item[key].get<int>()), type_name});
+                        found_mark = true;
+                    }
+                };
+
+                add_mark("class_work_mark", "Классная работа");
+                add_mark("control_work_mark", "Контрольная");
+                add_mark("final_work_mark", "Экзамен");
+                add_mark("home_work_mark", "Домашняя");
+                add_mark("lab_work_mark", "Лабораторная");
+                add_mark("practical_work_mark", "Практика");
+
+                
             }
         }
     }
