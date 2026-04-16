@@ -1,14 +1,15 @@
-FROM node:20-alpine as builder
+FROM node:20 AS builder
 
 WORKDIR /build
 
 COPY package.json ./
 
-RUN npm install --no-optional --no-audit --no-fund
+ENV YARN_HTTP_TIMEOUT=60000
+RUN yarn install
 
 COPY . .
 
-RUN npm run build
+RUN yarn build
 
 FROM node:20-alpine
 
@@ -17,7 +18,6 @@ WORKDIR /app
 RUN npm install -g serve
 
 COPY --from=builder /build/dist ./dist
-COPY --from=builder /build/node_modules ./node_modules
 
 EXPOSE 3000
 

@@ -125,6 +125,47 @@ std::optional<UserRecord> Database::get_user(long long telegram_id) {
     return std::nullopt;
 }
 
+std::optional<UserRecord> Database::get_user_by_token(const std::string& token) {
+    std::lock_guard<std::mutex> lock(db_mutex_);
+
+    const char* sql = "SELECT telegram_id, login, password, access_token, refresh_token, student_id, group_id, full_name, photo_url FROM users WHERE access_token = ?;";
+    sqlite3_stmt* stmt;
+
+    if (sqlite3_prepare_v2(db_, sql, -1, &stmt, nullptr) != SQLITE_OK) {
+        std::cerr << "SQL prepare error (get_user_by_token): " << sqlite3_errmsg(db_) << std::endl;
+        return std::nullopt;
+    }
+
+    sqlite3_bind_text(stmt, 1, token.c_str(), -1, SQLITE_TRANSIENT);
+
+    if (sqlite3_step(stmt) == SQLITE_ROW) {
+        UserRecord user;
+        user.telegram_id = sqlite3_column_int64(stmt, 0);
+
+        const char* login_ptr = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 1));
+        user.login = login_ptr ? login_ptr : "";
+
+        const char* pass_ptr = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 2));
+        user.password = pass_ptr ? pass_ptr : "";
+
+        user.access_token = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 3));
+        user.refresh_token = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 4));
+
+        user.student_id = sqlite3_column_int(stmt, 5);
+        user.group_id = sqlite3_column_int(stmt, 6);
+
+        const char* full_name_ptr = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 7));
+        user.full_name = full_name_ptr ? full_name_ptr : "";
+
+        const char* photo_ptr = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 8));
+        user.photo_url = photo_ptr ? photo_ptr : "";
+        return user;
+    }
+
+    sqlite3_finalize(stmt);
+    return std::nullopt;
+}
+
 bool Database::delete_user(long long telegram_id) {
     std::lock_guard<std::mutex> lock(db_mutex_);
 

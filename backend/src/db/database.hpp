@@ -29,6 +29,7 @@ public:
     bool save_user(const UserRecord& user);
 
     std::optional<UserRecord> get_user(long long telegram_id);
+    std::optional<UserRecord> get_user_by_token(const std::string& token);
 
     bool delete_user(long long telegram_id);
 

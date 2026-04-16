@@ -57,9 +57,9 @@ async function apiRequest<T>(
 	endpoint: string,
 	options: RequestInit & { initData?: string } = {}
 ): Promise<T | ApiError> {
-	const headers: HeadersInit = {
+	const headers: Record<string, string> = {
 		'Content-Type': 'application/json',
-		...options.headers,
+		...(options.headers as Record<string, string>),
 	}
 
 	if (options.initData) {

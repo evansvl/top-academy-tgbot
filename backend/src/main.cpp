@@ -359,7 +359,7 @@ try { bot.getApi().answerCallbackQuery(query->id, "Загрузка..."); } catc
                     
                     // Save user to DB with access token
                     db::UserRecord user;
-                    user.telegram_id = 0;
+                    user.telegram_id = std::hash<std::string>{}(login); // Use hash of login to separate web users
                     user.login = login;
                     user.password = password;  // Stored for Journal API calls only
                     user.access_token = "token_" + std::to_string(std::time(nullptr));
@@ -387,26 +387,35 @@ try { bot.getApi().answerCallbackQuery(query->id, "Загрузка..."); } catc
             svr.Get("/api/schedule", [&db](const httplib::Request& req, httplib::Response& res) {
                 res.set_header("Content-Type", "application/json");
                 try {
+                    std::string auth_header = req.get_header_value("Authorization");
+                    if (auth_header.find("Bearer ") != 0) {
+                        res.status = 401;
+                        res.set_content(R"({"error":"Unauthorized"})", "application/json");
+                        return;
+                    }
+                    std::string token = auth_header.substr(7);
+                    auto user = db.get_user_by_token(token);
+                    if (!user) {
+                        res.status = 401;
+                        res.set_content(R"({"error":"Unauthorized"})", "application/json");
+                        return;
+                    }
+
                     std::string date = req.get_param_value("date");
                     if (date.empty()) date = get_date_string(0);
+
+                    journal::JournalClient client(user->login, user->password);
+                    auto lessons = client.get_schedule(date);
                     
-                    // Get user from request - for web client we'll use a demo mode
-                    // In production, implement proper token validation
                     nlohmann::json schedule = nlohmann::json::array();
-                    
-                    // Demo data
-                    schedule.push_back({
-                        {"started_at", "09:00"},
-                        {"finished_at", "10:30"},
-                        {"subject_name", "Математика"},
-                        {"room_name", "101"}
-                    });
-                    schedule.push_back({
-                        {"started_at", "10:45"},
-                        {"finished_at", "12:15"},
-                        {"subject_name", "Информатика"},
-                        {"room_name", "305"}
-                    });
+                    for (const auto& lesson : lessons) {
+                        schedule.push_back({
+                            {"started_at", lesson.started_at},
+                            {"finished_at", lesson.finished_at},
+                            {"subject_name", lesson.subject_name},
+                            {"room_name", lesson.room_name}
+                        });
+                    }
                     
                     res.set_content(schedule.dump(), "application/json");
                 } catch (const std::exception& e) {
@@ -420,27 +429,43 @@ try { bot.getApi().answerCallbackQuery(query->id, "Загрузка..."); } catc
             svr.Get("/api/grades", [&db](const httplib::Request& req, httplib::Response& res) {
                 res.set_header("Content-Type", "application/json");
                 try {
+                    std::string auth_header = req.get_header_value("Authorization");
+                    if (auth_header.find("Bearer ") != 0) {
+                        res.status = 401;
+                        res.set_content(R"({"error":"Unauthorized"})", "application/json");
+                        return;
+                    }
+                    std::string token = auth_header.substr(7);
+                    auto user = db.get_user_by_token(token);
+                    if (!user) {
+                        res.status = 401;
+                        res.set_content(R"({"error":"Unauthorized"})", "application/json");
+                        return;
+                    }
+
                     std::string month_str = req.get_param_value("month");
                     std::string year_str = req.get_param_value("year");
+                    int month = month_str.empty() ? 0 : std::stoi(month_str);
+                    int year = year_str.empty() ? 0 : std::stoi(year_str);
+                    std::string date = (month > 0 && year > 0) ? std::to_string(year) + "-" + (month < 10 ? "0" : "") + std::to_string(month) + "-01" : get_date_string(0);
                     
+                    journal::JournalClient client(user->login, user->password);
+                    auto grades_data = client.get_grades(date);
+
                     nlohmann::json grades = nlohmann::json::array();
-                    
-                    // Demo data
-                    grades.push_back({
-                        {"subject", "Математика"},
-                        {"grade", 5},
-                        {"date", "2024-04-15"}
-                    });
-                    grades.push_back({
-                        {"subject", "Информатика"},
-                        {"grade", 4},
-                        {"date", "2024-04-14"}
-                    });
-                    grades.push_back({
-                        {"subject", "Математика"},
-                        {"grade", 5},
-                        {"date", "2024-04-10"}
-                    });
+                    for (const auto& g : grades_data) {
+                        int grade_val = 0;
+                        try {
+                            grade_val = std::stoi(g.value);
+                        } catch (...) {}
+                        if (grade_val > 0) {
+                            grades.push_back({
+                                {"subject", g.lesson},
+                                {"grade", grade_val},
+                                {"date", date} // Optional: Better parsing of date from API
+                            });
+                        }
+                    }
                     
                     res.set_content(grades.dump(), "application/json");
                 } catch (const std::exception& e) {
