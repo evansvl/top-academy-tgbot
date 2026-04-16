@@ -7,8 +7,8 @@ namespace journal {
 const std::string kBaseUrl = "https://msapi.top-academy.ru/api/v2";
 const std::string kAppKey = "6a56a5df2667e65aab73ce76d1dd737f7d1faef9c52e8b8c55ac75f565d8e8a6";
 
-JournalClient::JournalClient(const std::string& login, const std::string& password, std::shared_ptr<sw::redis::Redis> redis)
-    : login_(login), password_(password), redis_(redis) {}
+JournalClient::JournalClient(const std::string& login, const std::string& password)
+    : login_(login), password_(password) {}
 
 bool JournalClient::refresh_token() {
     nlohmann::json payload = {
@@ -105,36 +105,12 @@ nlohmann::json JournalClient::make_request(const std::string& endpoint, const nl
     return nullptr;
 }
 
-std::vector<Lesson> JournalClient::get_schedule(const std::string& date) {      
+std::vector<Lesson> JournalClient::get_schedule(const std::string& date) {
     std::vector<Lesson> lessons;
     
-    std::string cache_key = "schedule:" + login_ + ":" + date;
-    if (redis_) {
-        try {
-            auto val = redis_->get(cache_key);
-            if (val) {
-                auto response = nlohmann::json::parse(*val);
-                for (const auto& item : response) {
-                    Lesson lesson;
-                    lesson.started_at = item.value("started_at", "");
-                    lesson.finished_at = item.value("finished_at", "");
-                    lesson.subject_name = item.value("subject_name", "");
-                    lesson.room_name = item.value("room_name", "");
-                    lessons.push_back(lesson);
-                }
-                return lessons;
-            }
-        } catch (...) {}
-    }
-
     auto response = make_request("/schedule/operations/get-by-date", {{"date_filter", date}});
 
     if (response != nullptr && response.is_array()) {
-        if (redis_) {
-            try {
-                redis_->setex(cache_key, 3600*24, response.dump());
-            } catch (...) {}
-        }
         for (const auto& item : response) {
             Lesson lesson;
             lesson.started_at = item.value("started_at", "");
@@ -151,20 +127,6 @@ std::vector<Grade> JournalClient::get_grades(const std::string& date) {
     std::vector<Grade> grades;
     if (student_id_ == 0) {
         if (!auth_check()) return grades;
-    }
-
-    std::string cache_key = "grades:" + login_ + ":" + date;
-    if (redis_) {
-        try {
-            auto val = redis_->get(cache_key);
-            if (val) {
-                auto cached = nlohmann::json::parse(*val);
-                for (const auto& item : cached) {
-                    grades.push_back({item["lesson"], item["value"], item["type"]});
-                }
-                return grades;
-            }
-        } catch (...) {}
     }
 
     auto response = make_request("/progress/operations/student-visits", {{"student_id", student_id_}});
@@ -187,8 +149,6 @@ std::vector<Grade> JournalClient::get_grades(const std::string& date) {
                 add_mark("home_work_mark", "Домашняя");
                 add_mark("lab_work_mark", "Лабораторная");
                 add_mark("practical_work_mark", "Практика");
-
-                
             }
         }
     }

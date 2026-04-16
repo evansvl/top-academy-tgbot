@@ -4,8 +4,6 @@
 #include <optional>
 #include <vector>
 #include <nlohmann/json.hpp>
-#include <sw/redis++/redis++.h>
-#include <memory>
 
 namespace journal {
 
@@ -24,12 +22,11 @@ struct Lesson {
 
 class JournalClient {
 public:
-    JournalClient(const std::string& login, const std::string& password, std::shared_ptr<sw::redis::Redis> redis = nullptr);
+    JournalClient(const std::string& login, const std::string& password);
     
     bool auth_check();
     std::vector<Lesson> get_schedule(const std::string& date);
     std::vector<Grade> get_grades(const std::string& date);
-
 
     void set_cache(const std::string& token, int student_id) { access_token_ = token; student_id_ = student_id; }
     std::string get_token() const { return access_token_; }
@@ -41,11 +38,8 @@ private:
     std::string access_token_;
     int student_id_ = 0;
 
-
     bool refresh_token();
     nlohmann::json make_request(const std::string& endpoint, const nlohmann::json& params);
-
-    std::shared_ptr<sw::redis::Redis> redis_;
 };
 
 }

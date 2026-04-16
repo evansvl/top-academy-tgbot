@@ -21,13 +21,6 @@ FetchContent_MakeAvailable(sqlite3)
 add_library(sqlite3 ${sqlite3_SOURCE_DIR}/sqlite3.c)
 target_link_libraries(sqlite3 ${CMAKE_DL_LIBS})
 
-FetchContent_Declare(redis++ GIT_REPOSITORY https://github.com/sewenew/redis-plus-plus.git GIT_TAG 1.3.10)
-set(REDIS_PLUS_PLUS_CXX_STANDARD 17 CACHE STRING "")
-set(REDIS_PLUS_PLUS_BUILD_TEST OFF CACHE BOOL "")
-set(REDIS_PLUS_PLUS_BUILD_STATIC ON CACHE BOOL "")
-set(REDIS_PLUS_PLUS_BUILD_SHARED OFF CACHE BOOL "")
-FetchContent_MakeAvailable(redis++)
-
 find_package(OpenSSL REQUIRED)
 find_package(TgBot REQUIRED)
 
@@ -46,8 +39,6 @@ target_link_libraries(${PROJECT_NAME} PRIVATE
     httplib
     sqlite3
     TgBot::TgBot
-    redis++::redis++
-    hiredis
     OpenSSL::Crypto
     OpenSSL::SSL
 )

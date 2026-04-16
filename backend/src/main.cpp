@@ -13,7 +13,6 @@
 #include "journal_api/journal_client.hpp"
 #include "tma_auth/tma_auth.hpp"
 #include "utils/date_utils.hpp"
-#include <sw/redis++/redis++.h>
 #include <memory>
 
 std::unordered_map<std::string, std::string> load_env(const std::string& filepath) {
@@ -123,17 +122,7 @@ int main() {
         db::Database db(db_path);
         db.init();
 
-        std::string redis_url = get_env_var("REDIS_URL");
-        if (redis_url.empty()) redis_url = "tcp://localhost:6379";
-        
-        std::shared_ptr<sw::redis::Redis> redis;
-        try {
-            redis = std::make_shared<sw::redis::Redis>(redis_url);
-            redis->ping();
-        } catch (const std::exception& e) {
-            std::cerr << "Redis connection failed, continuing without cache: " << e.what() << std::endl;
-            redis = nullptr;
-        }
+
 
         TgBot::Bot bot(bot_token);
         std::unordered_map<long long, AuthSession> auth_sessions;
@@ -177,7 +166,7 @@ int main() {
                     std::string login = session.login;
                     bot.getApi().sendMessage(chat_id, "Проверяем данные...");
 
-                    journal::JournalClient client(login, password, redis);
+                    journal::JournalClient client(login, password);
                         if (client.auth_check()) {
                             db::UserRecord new_user;
                             new_user.telegram_id = chat_id;

@@ -1,15 +1,4 @@
 services:
-  redis:
-    image: redis:7-alpine
-    container_name: top_academy_redis_dev
-    restart: unless-stopped
-    ports:
-      - '6379:6379'
-    volumes:
-      - redis_data_dev:/data
-    networks:
-      - app_network_dev
-
   backend:
     build:
       context: ./backend
@@ -23,11 +12,8 @@ services:
       - db_data_dev:/app/data
     environment:
       - DB_PATH=/app/data/journal_bot.db
-      - REDIS_URL=tcp://redis:6379
       - BOT_TOKEN=${BOT_TOKEN}
       - TMA_URL=${TMA_URL}
-    depends_on:
-      - redis
     networks:
       - app_network_dev
 
@@ -54,5 +40,4 @@ networks:
 
 volumes:
   db_data_dev:
-  redis_data_dev:
 
