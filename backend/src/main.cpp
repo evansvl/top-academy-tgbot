@@ -443,11 +443,8 @@ try { bot.getApi().answerCallbackQuery(query->id, "Загрузка..."); } catc
                         return;
                     }
 
-                    std::string month_str = req.get_param_value("month");
-                    std::string year_str = req.get_param_value("year");
-                    int month = month_str.empty() ? 0 : std::stoi(month_str);
-                    int year = year_str.empty() ? 0 : std::stoi(year_str);
-                    std::string date = (month > 0 && year > 0) ? std::to_string(year) + "-" + (month < 10 ? "0" : "") + std::to_string(month) + "-01" : get_date_string(0);
+                    std::string date = req.get_param_value("date");
+                    if (date.empty()) date = get_date_string(0);
                     
                     journal::JournalClient client(user->login, user->password);
                     auto grades_data = client.get_grades(date);
@@ -458,11 +455,11 @@ try { bot.getApi().answerCallbackQuery(query->id, "Загрузка..."); } catc
                         try {
                             grade_val = std::stoi(g.value);
                         } catch (...) {}
-                        if (grade_val > 0) {
+                        if (grade_val > 0 || !g.value.empty()) {
                             grades.push_back({
                                 {"subject", g.lesson},
-                                {"grade", grade_val},
-                                {"date", date} // Optional: Better parsing of date from API
+                                {"grade", grade_val > 0 ? std::to_string(grade_val) : g.value},
+                                {"date", date}
                             });
                         }
                     }
