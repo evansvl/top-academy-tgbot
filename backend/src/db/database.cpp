@@ -31,8 +31,6 @@ bool Database::init() {
             full_name TEXT,
             photo_url TEXT
         );
-        -- Note: If table already exists, SQLite won't add columns via CREATE TABLE IF NOT EXISTS.
-        -- We will attempt to add columns gracefully below if needed.
     )";
 
     char* err_msg = nullptr;

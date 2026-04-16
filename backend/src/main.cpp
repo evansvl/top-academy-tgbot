@@ -29,13 +29,11 @@ std::unordered_map<std::string, std::string> load_env(const std::string& filepat
             std::string key = line.substr(0, pos);
             std::string value = line.substr(pos + 1);
             
-            // Trim whitespace and \r from key
             auto key_start = key.find_first_not_of(" \t\r\n");
             auto key_end = key.find_last_not_of(" \t\r\n");
             if (key_start == std::string::npos) key = "";
             else key = key.substr(key_start, key_end - key_start + 1);
 
-            // Trim whitespace and \r from value
             auto val_start = value.find_first_not_of(" \t\r\n");
             auto val_end = value.find_last_not_of(" \t\r\n");
             if (val_start == std::string::npos) value = "";
@@ -125,6 +123,18 @@ int main() {
         db::Database db(db_path);
         db.init();
 
+        std::string redis_url = get_env_var("REDIS_URL");
+        if (redis_url.empty()) redis_url = "tcp://localhost:6379";
+        
+        std::shared_ptr<sw::redis::Redis> redis;
+        try {
+            redis = std::make_shared<sw::redis::Redis>(redis_url);
+            redis->ping();
+        } catch (const std::exception& e) {
+            std::cerr << "Redis connection failed, continuing without cache: " << e.what() << std::endl;
+            redis = nullptr;
+        }
+
         TgBot::Bot bot(bot_token);
         std::unordered_map<long long, AuthSession> auth_sessions;
 
@@ -187,7 +197,7 @@ int main() {
                     auth_sessions.erase(chat_id);
                     return;
                 }
-            } // CLOSE auth_sessions.count check
+            }
 
             auto user_opt = db.get_user(chat_id);
             if (user_opt) {
@@ -322,9 +332,145 @@ try { bot.getApi().answerCallbackQuery(query->id, "Загрузка..."); } catc
             }
         });
 
-        std::thread tma_server([&db, bot_token]() {
+        std::thread api_server([&db, bot_token]() {
             httplib::Server svr;
+            
+            // CORS middleware
+            svr.set_post_routing_handler([](const httplib::Request&, httplib::Response& res) {
+                res.set_header("Access-Control-Allow-Origin", "*");
+                res.set_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
+                res.set_header("Access-Control-Allow-Headers", "Content-Type, Authorization, x-telegram-initdata");
+            });
+            
+            svr.Options(".*", [](const httplib::Request&, httplib::Response& res) {
+                res.status = 204;
+            });
+
+            // POST /api/auth/login - Web client authentication
+            svr.Post("/api/auth/login", [&db](const httplib::Request& req, httplib::Response& res) {
+                res.set_header("Content-Type", "application/json");
+                try {
+                    auto body = nlohmann::json::parse(req.body);
+                    std::string login = body.value("login", "");
+                    std::string password = body.value("password", "");
+                    
+                    if (login.empty() || password.empty()) {
+                        res.status = 400;
+                        res.set_content(R"({"error":"Missing login or password"})", "application/json");
+                        return;
+                    }
+                    
+                    // Verify credentials with Journal API
+                    journal::JournalClient client(login, password);
+                    if (!client.auth_check()) {
+                        res.status = 401;
+                        res.set_content(R"({"error":"Invalid credentials"})", "application/json");
+                        return;
+                    }
+                    
+                    // Save user to DB with access token
+                    db::UserRecord user;
+                    user.telegram_id = 0;
+                    user.login = login;
+                    user.password = password;  // Stored for Journal API calls only
+                    user.access_token = "token_" + std::to_string(std::time(nullptr));
+                    user.refresh_token = "";
+                    user.student_id = 0;
+                    user.group_id = 0;
+                    db.save_user(user);
+                    
+                    // Return response WITHOUT password
+                    nlohmann::json response = {
+                        {"access_token", user.access_token},
+                        {"login", user.login},
+                        {"student_id", user.student_id},
+                        {"group_id", user.group_id}
+                    };
+                    res.set_content(response.dump(), "application/json");
+                } catch (const std::exception& e) {
+                    res.status = 400;
+                    nlohmann::json error = {{"error", "Invalid request"}};
+                    res.set_content(error.dump(), "application/json");
+                }
+            });
+
+            // GET /api/schedule - Web client schedule
+            svr.Get("/api/schedule", [&db](const httplib::Request& req, httplib::Response& res) {
+                res.set_header("Content-Type", "application/json");
+                try {
+                    std::string date = req.get_param_value("date");
+                    if (date.empty()) date = get_date_string(0);
+                    
+                    // Get user from request - for web client we'll use a demo mode
+                    // In production, implement proper token validation
+                    nlohmann::json schedule = nlohmann::json::array();
+                    
+                    // Demo data
+                    schedule.push_back({
+                        {"started_at", "09:00"},
+                        {"finished_at", "10:30"},
+                        {"subject_name", "Математика"},
+                        {"room_name", "101"}
+                    });
+                    schedule.push_back({
+                        {"started_at", "10:45"},
+                        {"finished_at", "12:15"},
+                        {"subject_name", "Информатика"},
+                        {"room_name", "305"}
+                    });
+                    
+                    res.set_content(schedule.dump(), "application/json");
+                } catch (const std::exception& e) {
+                    res.status = 500;
+                    nlohmann::json error = {{"error", "Server error"}};
+                    res.set_content(error.dump(), "application/json");
+                }
+            });
+
+            // GET /api/grades - Web client grades
+            svr.Get("/api/grades", [&db](const httplib::Request& req, httplib::Response& res) {
+                res.set_header("Content-Type", "application/json");
+                try {
+                    std::string month_str = req.get_param_value("month");
+                    std::string year_str = req.get_param_value("year");
+                    
+                    nlohmann::json grades = nlohmann::json::array();
+                    
+                    // Demo data
+                    grades.push_back({
+                        {"subject", "Математика"},
+                        {"grade", 5},
+                        {"date", "2024-04-15"}
+                    });
+                    grades.push_back({
+                        {"subject", "Информатика"},
+                        {"grade", 4},
+                        {"date", "2024-04-14"}
+                    });
+                    grades.push_back({
+                        {"subject", "Математика"},
+                        {"grade", 5},
+                        {"date", "2024-04-10"}
+                    });
+                    
+                    res.set_content(grades.dump(), "application/json");
+                } catch (const std::exception& e) {
+                    res.status = 500;
+                    nlohmann::json error = {{"error", "Server error"}};
+                    res.set_content(error.dump(), "application/json");
+                }
+            });
+
+            // GET /api/health - Health check
+            svr.Get("/api/health", [](const httplib::Request&, httplib::Response& res) {
+                res.set_header("Content-Type", "application/json");
+                nlohmann::json response = {{"status", "ok"}};
+                res.set_content(response.dump(), "application/json");
+            });
+
+            // POST /api/tma/auth - Telegram Mini App auth
             svr.Post("/api/tma/auth", [&db, bot_token](const httplib::Request& req, httplib::Response& res) {
+                res.set_header("Content-Type", "application/json");
                 try {
                     auth::TgAuth tg_auth(bot_token);
                     if (!tg_auth.validate_init_data(req.body)) {
@@ -344,7 +490,9 @@ try { bot.getApi().answerCallbackQuery(query->id, "Загрузка..."); } catc
                 }
             });
             
+            // GET /api/tma/schedule - Telegram Mini App schedule
             svr.Get("/api/tma/schedule", [&db, bot_token](const httplib::Request& req, httplib::Response& res) {
+                res.set_header("Content-Type", "application/json");
                 if (!req.has_header("x-telegram-initdata")) {
                     res.status = 401;
                     res.set_content("{\"error\":\"No init data\"}", "application/json");
@@ -392,7 +540,7 @@ try { bot.getApi().answerCallbackQuery(query->id, "Загрузка..."); } catc
                 }
             });
 
-            std::cout << "Starting HTTP server for TMA on port 8080..." << std::endl;
+            std::cout << "Starting HTTP server on port 8080..." << std::endl;
             svr.listen("0.0.0.0", 8080);
         });
 
@@ -406,7 +554,7 @@ try { bot.getApi().answerCallbackQuery(query->id, "Загрузка..."); } catc
             }
         }
 
-        tma_server.join();
+        api_server.join();
 
     } catch (const std::exception& e) {
         std::cerr << "Error: " << e.what() << std::endl;

@@ -1,42 +1,58 @@
 services:
   redis:
     image: redis:7-alpine
-    container_name: top_academy_redis_local
+    container_name: top_academy_redis_dev
     restart: unless-stopped
     ports:
       - '6379:6379'
     volumes:
-      - redis_data_local:/data
+      - redis_data_dev:/data
+    networks:
+      - app_network_dev
 
   backend:
     build:
       context: ./backend
       dockerfile: Dockerfile
-    container_name: top_academy_backend_local
+    container_name: top_academy_backend_dev
     restart: unless-stopped
     ports:
       - '8080:8080'
     volumes:
       - .env:/app/.env
-      - db_data:/app/data
+      - db_data_dev:/app/data
     environment:
       - DB_PATH=/app/data/journal_bot.db
       - REDIS_URL=tcp://redis:6379
+      - BOT_TOKEN=${BOT_TOKEN}
+      - TMA_URL=${TMA_URL}
     depends_on:
       - redis
+    networks:
+      - app_network_dev
 
-  frontend:
-    build:
-      context: ./frontend
-      dockerfile: Dockerfile
-    container_name: top_academy_frontend_local
+  frontend_dev:
+    image: node:20-alpine
+    container_name: top_academy_frontend_dev
     restart: unless-stopped
+    working_dir: /app
     ports:
       - '3000:3000'
+    volumes:
+      - ./frontend:/app
+    command: sh -c "npm install && npm run dev -- --host 0.0.0.0"
+    environment:
+      - VITE_API_URL=http://backend:8080
     depends_on:
       - backend
+    networks:
+      - app_network_dev
+
+networks:
+  app_network_dev:
+    driver: bridge
 
 volumes:
-  db_data:
+  db_data_dev:
+  redis_data_dev:
 
-  redis_data_local:
